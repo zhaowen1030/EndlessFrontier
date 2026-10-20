@@ -1,0 +1,70 @@
+name: EndlessFrontier
+options:
+  bundleIdPrefix: com.vince
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_APP_SANDBOX: NO
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    INFOPLIST_KEY_NSHumanReadableCopyright: "Made for curious minds. Data from arXiv.org."
+    CLANG_ENABLE_MODULES: YES
+
+targets:
+  EndlessFrontier:
+    type: application
+    platform: macOS
+    sources:
+      - path: EndlessFrontier
+        excludes:
+          - "Resources"
+      - path: EndlessFrontier/Resources/Assets.xcassets
+        buildPhase: resources
+      - path: EndlessFrontier/Resources/KaTeX
+        type: folder
+        buildPhase: resources
+    info:
+      path: EndlessFrontier/Info.plist
+      properties:
+        CFBundleDisplayName: "无尽前沿"
+        CFBundleName: "无尽前沿"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: "public.app-category.education"
+        LSMinimumSystemVersion: "15.0"
+        ITSAppUsesNonExemptEncryption: false
+        NSHighResolutionCapable: true
+        NSHumanReadableCopyright: "Made for curious minds. Paper data from arXiv.org."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.vince.EndlessFrontier
+        PRODUCT_NAME: EndlessFrontier
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_PREVIEWS: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+schemes:
+  EndlessFrontier:
+    build:
+      targets:
+        EndlessFrontier: all
+    run:
+      config: Debug
+      commandLineArguments:
+        "": ""
+    archive:
+      config: Release
