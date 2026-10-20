@@ -50,6 +50,33 @@ actor ArxivService {
         )
     }
 
+    /// Fetches metadata for known arXiv IDs, used to restore papers whose PDFs
+    /// were downloaded before local download history existed.
+    func fetchPapers(ids: [String]) async throws -> [Paper] {
+        let unique = Array(Set(ids)).sorted()
+        guard !unique.isEmpty else { return [] }
+        var results: [Paper] = []
+        for batchStart in stride(from: 0, to: unique.count, by: 50) {
+            let batch = Array(unique[batchStart..<min(batchStart + 50, unique.count)])
+            try await throttle()
+            var components = URLComponents(string: "https://export.arxiv.org/api/query")
+            components?.queryItems = [
+                URLQueryItem(name: "id_list", value: batch.joined(separator: ",")),
+                URLQueryItem(name: "max_results", value: String(batch.count))
+            ]
+            guard let url = components?.url else { throw ArxivError.invalidURL }
+            var request = URLRequest(url: url)
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            let data = try await loadData(request)
+            let parser = ArxivFeedParser()
+            guard parser.parse(data) else {
+                throw ArxivError.parse(parser.failureDescription)
+            }
+            results.append(contentsOf: parser.papers)
+        }
+        return results
+    }
+
     private func throttle() async throws {
         if let lastRequestAt {
             let elapsed = Date().timeIntervalSince(lastRequestAt)

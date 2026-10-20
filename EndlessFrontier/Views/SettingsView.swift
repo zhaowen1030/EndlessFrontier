@@ -623,6 +623,8 @@ private struct DataSettingsPane: View {
                 pathRow("文本标注目录", AppPaths.annotationsDirectory)
                 pathRow("知识树目录", AppPaths.knowledgeTreesDirectory)
                 pathRow("收藏数据", AppPaths.favoritesFile)
+                pathRow("下载记录", AppPaths.downloadHistoryFile)
+                pathRow("PDF 双语阅读缓存", AppPaths.readerDirectory)
                 pathRow("下载目录", AppPaths.downloadsDirectory)
                 Text("可通过「在访达中打开」直接访问这些文件。删除报告后需要重新手动生成；翻译缓存删除后会在下次浏览时重新翻译。")
                     .settingsNote()

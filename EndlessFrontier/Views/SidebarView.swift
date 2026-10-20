@@ -6,6 +6,7 @@ struct SidebarView: View {
     @EnvironmentObject private var reports: ReportStore
     @EnvironmentObject private var translations: TranslationCache
     @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var downloads: DownloadManager
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -112,6 +113,7 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 5) {
                 graphRow
                 favoritesRow
+                downloadsRow
 
                 if state.sidebarSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     HStack {
@@ -199,6 +201,63 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 3)
+    }
+
+    private var downloadsRow: some View {
+        let selected: Bool = {
+            if case .downloads = state.selection { return true }
+            return false
+        }()
+        return Button {
+            state.openDownloads()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: selected ? "arrow.down.circle.fill" : "arrow.down.circle")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(selected ? .white : AppTheme.cyan)
+                    .frame(width: 27, height: 27)
+                    .background(
+                        (selected ? Color.white.opacity(0.15) : AppTheme.cyan.opacity(0.10)),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("下载论文")
+                        .font(AppFont.chinese(12.5, weight: .semibold))
+                    Text("DOWNLOADS")
+                        .font(.system(size: 7.8, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(selected ? .white.opacity(0.62) : .secondary.opacity(0.8))
+                }
+                Spacer()
+                if downloads.downloadedPapers.count > 0 {
+                    Text("\(downloads.downloadedPapers.count)")
+                        .font(AppFont.mono(9, weight: .medium))
+                        .foregroundStyle(selected ? .white.opacity(0.75) : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(selected ? Color.white.opacity(0.12) : Color.primary.opacity(0.05), in: Capsule())
+                }
+            }
+            .foregroundStyle(selected ? .white : .primary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 8)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [AppTheme.accentDeep.opacity(0.95), AppTheme.accentDeep.opacity(0.76)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: AppTheme.accentDeep.opacity(0.22), radius: 8, y: 3)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
 
     private var favoritesRow: some View {

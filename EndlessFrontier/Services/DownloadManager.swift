@@ -26,12 +26,35 @@ struct PaperDownloadState: Equatable {
     }
 }
 
+struct DownloadedPaper: Codable, Identifiable, Hashable {
+    let paper: Paper
+    let downloadedAt: Date
+    let localPath: String
+
+    var id: String { paper.id }
+    var localURL: URL { URL(fileURLWithPath: localPath) }
+}
+
 @MainActor
 final class DownloadManager: ObservableObject {
     @Published private(set) var states: [String: PaperDownloadState] = [:]
+    @Published private(set) var downloadedPapers: [DownloadedPaper] = []
     private var inFlight: Set<String> = []
 
     var downloadFolder: URL { AppPaths.downloadsDirectory }
+
+    var sortedDownloadedPapers: [DownloadedPaper] {
+        downloadedPapers.sorted {
+            if $0.downloadedAt == $1.downloadedAt { return $0.paper.id < $1.paper.id }
+            return $0.downloadedAt > $1.downloadedAt
+        }
+    }
+
+    init() {
+        AppPaths.ensureDirectories()
+        loadHistory()
+        importExistingDownloads()
+    }
 
     var downloadedCount: Int {
         let files = (try? FileManager.default.contentsOfDirectory(
@@ -71,6 +94,7 @@ final class DownloadManager: ObservableObject {
         let destination = destinationURL(for: paper)
         if !force, FileManager.default.fileExists(atPath: destination.path) {
             states[paper.id] = .init(phase: .downloaded(destination))
+            recordDownload(paper, at: destination, date: fileDate(destination))
             return
         }
 
@@ -99,6 +123,7 @@ final class DownloadManager: ObservableObject {
                 try FileManager.default.moveItem(at: temporaryURL, to: destination)
                 self.inFlight.remove(paper.id)
                 self.states[paper.id] = .init(phase: .downloaded(destination))
+                self.recordDownload(paper, at: destination, date: Date())
             } catch {
                 self.inFlight.remove(paper.id)
                 self.states[paper.id] = .init(phase: .failed(error.localizedDescription))
@@ -129,6 +154,8 @@ final class DownloadManager: ObservableObject {
         try? FileManager.default.removeItem(at: downloadFolder)
         try? FileManager.default.createDirectory(at: downloadFolder, withIntermediateDirectories: true)
         states.removeAll()
+        downloadedPapers.removeAll()
+        try? FileManager.default.removeItem(at: AppPaths.downloadHistoryFile)
     }
 
     func restoreDownloadedStates(for papers: [Paper]) {
@@ -138,7 +165,160 @@ final class DownloadManager: ObservableObject {
             let destination = destinationURL(for: paper)
             if FileManager.default.fileExists(atPath: destination.path) {
                 states[paper.id] = .init(phase: .downloaded(destination))
+                if !downloadedPapers.contains(where: { $0.paper.id == paper.id }) {
+                    recordDownload(paper, at: destination, date: fileDate(destination))
+                }
             }
+        }
+    }
+
+    private func recordDownload(_ paper: Paper, at url: URL, date: Date) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        downloadedPapers.removeAll { $0.paper.id == paper.id }
+        downloadedPapers.append(DownloadedPaper(
+            paper: paper,
+            downloadedAt: date,
+            localPath: url.path
+        ))
+        saveHistory()
+    }
+
+    private func fileDate(_ url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+    }
+
+    /// Older versions kept downloaded PDFs on disk without a local download
+    /// history. Rebuild entries from the `<arXiv id> <title>.pdf` file names so
+    /// those completed downloads appear in the library, then enrich the
+    /// metadata from arXiv in the background.
+    private func importExistingDownloads() {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: downloadFolder,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        var knownIDs = Set(downloadedPapers.map(\.paper.id))
+        var imported = false
+
+        for file in files where file.pathExtension.lowercased() == "pdf" {
+            guard let (id, title) = Self.arxivIDAndTitle(fromFileName: file.lastPathComponent),
+                  knownIDs.insert(id).inserted else { continue }
+            let date = fileDate(file)
+            let paper = Paper(
+                id: id,
+                title: title,
+                abstract: "",
+                authors: [],
+                published: date,
+                updated: date,
+                primaryCategory: "arXiv",
+                categories: [],
+                absURL: URL(string: "https://arxiv.org/abs/\(id)") ?? file,
+                pdfURL: URL(string: "https://arxiv.org/pdf/\(id)") ?? file,
+                comment: nil,
+                journalReference: nil
+            )
+            downloadedPapers.append(DownloadedPaper(
+                paper: paper,
+                downloadedAt: date,
+                localPath: file.path
+            ))
+            states[paper.id] = .init(phase: .downloaded(file))
+            imported = true
+        }
+
+        if imported {
+            saveHistory()
+        }
+        refreshMissingMetadata()
+    }
+
+    private func refreshMissingMetadata() {
+        let ids = downloadedPapers
+            .filter { $0.paper.abstract.isEmpty && $0.paper.authors.isEmpty }
+            .map(\.paper.id)
+        guard !ids.isEmpty else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            guard let fetched = try? await ArxivService.shared.fetchPapers(ids: ids),
+                  !fetched.isEmpty else { return }
+            self.applyMetadata(fetched)
+        }
+    }
+
+    private func applyMetadata(_ papers: [Paper]) {
+        var changed = false
+        for paper in papers {
+            guard let index = downloadedPapers.firstIndex(where: { $0.paper.id == paper.id }) else { continue }
+            let existing = downloadedPapers[index]
+            guard existing.paper.abstract.isEmpty || existing.paper.authors.isEmpty else { continue }
+            downloadedPapers[index] = DownloadedPaper(
+                paper: paper,
+                downloadedAt: existing.downloadedAt,
+                localPath: existing.localPath
+            )
+            changed = true
+        }
+        if changed {
+            saveHistory()
+        }
+    }
+
+    private static func arxivIDAndTitle(fromFileName name: String) -> (id: String, title: String)? {
+        var base = name
+        if base.lowercased().hasSuffix(".pdf") {
+            base = String(base.dropLast(4))
+        }
+        base = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+
+        let token: String
+        let remainder: String
+        if let separator = base.firstIndex(where: \.isWhitespace) {
+            token = String(base[..<separator])
+            remainder = String(base[base.index(after: separator)...])
+        } else {
+            token = base
+            remainder = ""
+        }
+        guard token.range(of: #"^\d{4}\.\d{4,5}(v\d+)?$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        let id = token.replacingOccurrences(of: #"v\d+$"#, with: "", options: .regularExpression)
+        let title = remainder.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (id, title.isEmpty ? id : title)
+    }
+
+    private func saveHistory() {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let data = try encoder.encode(downloadedPapers)
+            try AppPaths.writeAtomically(data, to: AppPaths.downloadHistoryFile)
+        } catch {
+            NSLog("EndlessFrontier: failed to save download history: \(error)")
+        }
+    }
+
+    private func loadHistory() {
+        guard let data = try? Data(contentsOf: AppPaths.downloadHistoryFile) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let decoded = try? decoder.decode([DownloadedPaper].self, from: data) else {
+            NSLog("EndlessFrontier: failed to decode download history")
+            return
+        }
+        var seen = Set<String>()
+        var valid: [DownloadedPaper] = []
+        for entry in decoded where seen.insert(entry.paper.id).inserted {
+            guard FileManager.default.fileExists(atPath: entry.localPath) else { continue }
+            valid.append(entry)
+            states[entry.paper.id] = .init(phase: .downloaded(entry.localURL))
+        }
+        downloadedPapers = valid
+        if valid.count != decoded.count {
+            saveHistory()
         }
     }
 

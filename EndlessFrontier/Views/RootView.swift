@@ -66,6 +66,8 @@ struct RootView: View {
         switch state.selection {
         case .favorites:
             FavoritesView()
+        case .downloads:
+            DownloadsView()
         case .category(let id):
             if let category = ArxivTaxonomy.category(id) {
                 CategoryView(category: category, services: services)
@@ -87,6 +89,8 @@ struct RootView: View {
         switch state.selection {
         case .favorites:
             return AppTheme.gold
+        case .downloads:
+            return AppTheme.cyan
         case .category(let id):
             if let category = ArxivTaxonomy.category(id) {
                 return AppTheme.groupColor(category.groupID)

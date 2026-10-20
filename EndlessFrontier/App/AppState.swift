@@ -3,6 +3,7 @@ import SwiftUI
 enum SidebarSelection: Hashable {
     case graph
     case favorites
+    case downloads
     case category(String)
 }
 
@@ -50,6 +51,10 @@ final class AppState: ObservableObject {
 
     func openFavorites() {
         selection = .favorites
+    }
+
+    func openDownloads() {
+        selection = .downloads
     }
 
     func openCategory(_ categoryID: String, tab: CategoryTab = .papers) {

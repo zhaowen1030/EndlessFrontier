@@ -15,6 +15,8 @@ enum AppPaths {
 
     static let translationCacheFile = cacheDirectory.appendingPathComponent("translations.json")
     static let favoritesFile = supportDirectory.appendingPathComponent("favorites.json")
+    static let downloadHistoryFile = supportDirectory.appendingPathComponent("downloaded-papers.json")
+    static let readerDirectory = supportDirectory.appendingPathComponent("Reader", isDirectory: true)
 
     static func annotationFileURL(categoryID: String) -> URL {
         annotationsDirectory.appendingPathComponent("\(categoryID).json")
@@ -24,6 +26,10 @@ enum AppPaths {
         knowledgeTreesDirectory.appendingPathComponent("\(categoryID).json")
     }
 
+    static func readerFileURL(paperID: String) -> URL {
+        readerDirectory.appendingPathComponent("\(paperID).json")
+    }
+
     static let downloadsDirectory: URL = {
         let base = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
@@ -31,7 +37,7 @@ enum AppPaths {
     }()
 
     static func ensureDirectories() {
-        for directory in [supportDirectory, reportsDirectory, annotationsDirectory, knowledgeTreesDirectory, cacheDirectory, logsDirectory, downloadsDirectory] {
+        for directory in [supportDirectory, reportsDirectory, annotationsDirectory, knowledgeTreesDirectory, cacheDirectory, logsDirectory, downloadsDirectory, readerDirectory] {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
     }

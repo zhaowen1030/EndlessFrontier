@@ -13,6 +13,8 @@ struct PaperRow: View {
     let onReveal: () -> Void
     let onRedownload: () -> Void
     let onTranslate: () -> Void
+    var onReadPDF: (() -> Void)? = nil
+    var downloadedAt: Date? = nil
 
     @EnvironmentObject private var favorites: FavoritesStore
     @State private var expanded = false
@@ -72,6 +74,17 @@ struct PaperRow: View {
                     .foregroundStyle(AppTheme.gold.opacity(0.82))
                     .lineLimit(1)
             }
+            if let downloadedAt {
+                Text("·")
+                    .foregroundStyle(.quaternary)
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(AppTheme.positive)
+                Text("下载于 \(downloadedAt.shortChinese)")
+                    .font(AppFont.chinese(9))
+                    .foregroundStyle(AppTheme.positive.opacity(0.82))
+                    .lineLimit(1)
+            }
             if paper.categories.count > 1 {
                 Text("+\(paper.categories.count - 1) cross-list")
                     .font(.system(size: 9, weight: .medium, design: .rounded))
@@ -128,7 +141,7 @@ struct PaperRow: View {
             Image(systemName: "person.2")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.tertiary)
-            Text(paper.authorLine)
+            Text(paper.authors.isEmpty ? "作者信息待补充" : paper.authorLine)
                 .font(AppFont.body(10.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -143,44 +156,47 @@ struct PaperRow: View {
         }
     }
 
+    @ViewBuilder
     private var abstractBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    LanguageTag(text: "EN")
-                    Text("Abstract")
-                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                Text(ScienceText.display(paper.abstract))
-                    .font(AppFont.body(12.3))
-                    .foregroundStyle(.primary.opacity(0.78))
-                    .lineSpacing(3)
-                    .lineLimit(expanded ? nil : 3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-
-            if let translation {
-                HairlineDivider().opacity(0.55)
+        if !paper.abstract.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
-                        LanguageTag(text: "中文", highlighted: true)
-                        Text("摘要")
-                            .font(AppFont.chinese(9.5, weight: .semibold))
+                        LanguageTag(text: "EN")
+                        Text("Abstract")
+                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
-                    Text(ScienceText.display(translation.abstractZH))
-                        .font(AppFont.chinese(12.2))
-                        .foregroundStyle(.primary.opacity(0.70))
-                        .lineSpacing(4)
+                    Text(ScienceText.display(paper.abstract))
+                        .font(AppFont.body(12.3))
+                        .foregroundStyle(.primary.opacity(0.78))
+                        .lineSpacing(3)
                         .lineLimit(expanded ? nil : 3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
-            } else if translationPending {
-                HStack(spacing: 7) {
-                    LanguageTag(text: "中文", highlighted: true)
-                    SkeletonBar(width: 210, height: 9)
+
+                if let translation {
+                    HairlineDivider().opacity(0.55)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            LanguageTag(text: "中文", highlighted: true)
+                            Text("摘要")
+                                .font(AppFont.chinese(9.5, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(ScienceText.display(translation.abstractZH))
+                            .font(AppFont.chinese(12.2))
+                            .foregroundStyle(.primary.opacity(0.70))
+                            .lineSpacing(4)
+                            .lineLimit(expanded ? nil : 3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if translationPending {
+                    HStack(spacing: 7) {
+                        LanguageTag(text: "中文", highlighted: true)
+                        SkeletonBar(width: 210, height: 9)
+                    }
                 }
             }
         }
@@ -188,14 +204,16 @@ struct PaperRow: View {
 
     private var footerRow: some View {
         HStack(spacing: 8) {
-            Button {
-                withAnimation(.snappy(duration: 0.22)) { expanded.toggle() }
-            } label: {
-                Label(expanded ? "收起摘要" : "展开摘要", systemImage: expanded ? "chevron.up" : "chevron.down")
-                    .font(AppFont.chinese(10.5, weight: .medium))
+            if !paper.abstract.isEmpty {
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) { expanded.toggle() }
+                } label: {
+                    Label(expanded ? "收起摘要" : "展开摘要", systemImage: expanded ? "chevron.up" : "chevron.down")
+                        .font(AppFont.chinese(10.5, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
             Spacer(minLength: 6)
 
@@ -242,6 +260,15 @@ struct PaperRow: View {
         switch downloadState?.phase {
         case .downloaded:
             HStack(spacing: 5) {
+                if let onReadPDF {
+                    Button(action: onReadPDF) {
+                        Label("阅读", systemImage: "book")
+                            .font(AppFont.chinese(10.5, weight: .semibold))
+                    }
+                    .buttonStyle(QuietIconButtonStyle())
+                    .help("打开 PDF 双语阅读器")
+                }
+
                 Button {
                     onOpenPDF()
                 } label: {

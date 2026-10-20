@@ -25,6 +25,8 @@ xcodebuild -project EndlessFrontier.xcodeproj \
 - **中英对照**：论文标题与摘要自动翻译为简体中文，英文在上、中文在下；翻译结果按 arXiv ID 缓存，避免重复计费。
 - **PDF 下载**：一键从 arXiv 下载论文原文件，保存到 `~/Downloads/无尽前沿论文`，支持打开和在访达中显示。
 - **本地收藏**：每张论文卡片都可收藏/取消收藏；侧边栏「收藏论文」按收藏时间倒序汇总全部收藏，数据只保存在本机。
+- **下载论文列表**：仅收录已完整下载的 PDF，按完成下载时间倒序展示；可直接进入 PDF 双语阅读器。
+- **PDF 双语阅读**：本地论文手动翻译，可只翻译当前页，也可「翻译全文」逐页处理整篇论文（已翻译页面自动跳过）；英文原文在上、中文译文在下，右侧显示关键词汇的音标、词性、释义与例句；支持原文/双语/分屏切换、PDF 宽度/高度适应、拖拽分屏比例。图表与公式通过原始 PDF 始终保留原版排版。译文与词汇按页缓存在本机，完成后不会重复调用模型。此前下载过但尚无下载记录的 PDF 会自动从文件名识别 arXiv ID 并恢复元数据。
 - **AI 知识树**：在学科页的「知识树」标签中手动构建顶向下的双语知识树；每个知识点可继续手动 AI 深入展开（概念定义、相关知识、核心人物、应用场景）。知识树与节点内容自动保存在本地，可重新生成；现有知识图谱的学科结点也提供知识树入口。
 - **AI 学科探索（手动触发）**：连接 Claude API 或 OpenAI 兼容模型，生成结构化双语学科报告：
   - 发展历史
@@ -143,6 +145,8 @@ AI 探索严格手动触发，不会在浏览分类时自动生成。生成使�
 | AI 报告 | `~/Library/Application Support/EndlessFrontier/Reports` |
 | 文本底色标记 | `~/Library/Application Support/EndlessFrontier/Annotations/<category>.json` |
 | AI 知识树 | `~/Library/Application Support/EndlessFrontier/KnowledgeTrees/<category>.json` |
+| 下载记录 | `~/Library/Application Support/EndlessFrontier/downloaded-papers.json` |
+| PDF 双语阅读缓存 | `~/Library/Application Support/EndlessFrontier/Reader/<paper>.json` |
 | 收藏论文 | `~/Library/Application Support/EndlessFrontier/favorites.json` |
 | 翻译缓存 | `~/Library/Application Support/EndlessFrontier/Cache/translations.json` |
 | 诊断日志 | `~/Library/Application Support/EndlessFrontier/Logs` |
