@@ -8,6 +8,29 @@
 
 *核心功能演示：知识图谱 · 中英对照 · AI 学科探索 · 下载论文 · PDF 双语阅读*
 
+## 下载与安装
+
+**无尽前沿 1.0.0（macOS 通用版）**
+
+⬇️ **[下载 EndlessFrontier-1.0.0-macOS.zip](https://github.com/zhaowen1030/EndlessFrontier/releases/download/v1.0.0/EndlessFrontier-1.0.0-macOS.zip)** · 约 5.1 MB
+
+### 系统要求
+
+- **macOS 15.0 或更高版本**（推荐 macOS 26 Tahoe）
+- **Apple Silicon 或 Intel Mac**（应用为通用二进制）
+- 需要网络访问 arXiv，以及所配置的大模型 API
+- 无需安装额外运行时，应用已包含全部依赖
+
+### 安装
+
+1. 下载并解压 `EndlessFrontier-1.0.0-macOS.zip`。
+2. 将 `无尽前沿.app` 拖入「应用程序」文件夹。
+3. 首次打开：应用为 ad-hoc 签名、未经过 Apple 公证。如系统提示无法验证开发者，请右键点击应用 →「打开」，或执行：
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/无尽前沿.app"
+   ```
+4. 打开应用后，在「设置 → 模型连接」中配置 Claude API 或 OpenAI 兼容模型。API Key 只保存在本机钥匙串。
+
 ## 构建说明
 
 本仓库只提交源代码、Xcode 工程与资源文件，不包含本机构建产物或用户数据。请在本地构建并自行签名：
@@ -46,12 +69,10 @@ xcodebuild -project EndlessFrontier.xcodeproj \
 - **双语交叉知识图谱**：34 个种子学科节点、45 条精选关系，并在生成 AI 报告后自动吸收报告中的跨学科关系和新节点。节点可点击，右侧检查器可直接进入 AI 探索；支持拖拽、缩放、适应窗口与节点搜索。
 - **隐私与本地优先**：API Key 存放在 macOS 钥匙串；报告、翻译缓存和 PDF 均保存在本机。论文浏览与下载不经过任何第三方服务器。
 
-## 系统要求
+## 开发要求
 
-- macOS 15.0+
-- 连接 arXiv、Anthropic API 或自选模型服务
-- 推荐 macOS 26 + Apple Silicon
-- 开发：Xcode 16+ / Swift 5.9+（本项目在 Xcode 26.3 构建通过）
+- Xcode 16+ / Swift 5.9+（本项目在 Xcode 26.3 构建通过）
+- macOS 15.0+ 开发环境
 
 ## 构建与运行
 
