@@ -5,6 +5,15 @@ import AppKit
 struct EndlessFrontierApp: App {
     @StateObject private var services = AppServices()
 
+    init() {
+        // macOS 26 draws NavigationSplitView sidebars as inset floating glass
+        // panels. Keep this app's sidebar flush with the window's left edge.
+        UserDefaults.standard.set(
+            false,
+            forKey: "NSSplitViewItemSidebarDefaultsToFloatingAppearance"
+        )
+    }
+
     var body: some Scene {
         WindowGroup("无尽前沿") {
             RootView()
