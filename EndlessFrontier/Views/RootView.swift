@@ -32,6 +32,9 @@ struct RootView: View {
             if DebugLaunchOptions.openFavorites {
                 state.openFavorites()
             }
+            if DebugLaunchOptions.openDownloads {
+                state.openDownloads()
+            }
             if DebugLaunchOptions.forceDark {
                 NSApp.appearance = NSAppearance(named: .darkAqua)
             }

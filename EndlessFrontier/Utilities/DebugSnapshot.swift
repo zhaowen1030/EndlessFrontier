@@ -66,6 +66,22 @@ enum DebugLaunchOptions {
         ProcessInfo.processInfo.arguments.contains("--favorites")
     }
 
+    static var openDownloads: Bool {
+        ProcessInfo.processInfo.arguments.contains("--downloads")
+    }
+
+    static var openReader: Bool {
+        ProcessInfo.processInfo.arguments.contains("--reader")
+    }
+
+    static var demoCapturePath: String? {
+        value(for: "--demo-capture")
+    }
+
+    static var demoSidebarPath: String? {
+        value(for: "--demo-sidebar")
+    }
+
     static var knowledgeTreeNodeID: String? {
         value(for: "--tree-node")
     }
@@ -255,6 +271,112 @@ final class DebugSnapshotCoordinator {
             NSLog("EndlessFrontier debug snapshot written to \(path)")
         }
         NSApp.terminate(nil)
+    }
+}
+
+/// Hosts the real RootView in a standalone window for deterministic demo
+/// capture, independent of the WindowGroup's state restoration behavior.
+@MainActor
+final class DebugDemoAppDelegate: NSObject, NSApplicationDelegate {
+    private var window: NSWindow?
+    private var sidebarWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard let path = DebugLaunchOptions.demoCapturePath else { return }
+
+        let services = AppServices()
+        if DebugLaunchOptions.openFavorites {
+            services.state.openFavorites()
+        } else if DebugLaunchOptions.openDownloads {
+            services.state.openDownloads()
+        } else if let categoryID = DebugLaunchOptions.categoryID {
+            services.state.openCategory(categoryID, tab: DebugLaunchOptions.startTab ?? .papers)
+        } else if let graphNode = DebugLaunchOptions.graphNodeID {
+            services.state.openGraph(focus: graphNode)
+        }
+
+        let root = RootView()
+            .environmentObject(services)
+            .environmentObject(services.state)
+            .environmentObject(services.settings)
+            .environmentObject(services.reports)
+            .environmentObject(services.translations)
+            .environmentObject(services.downloads)
+            .environmentObject(services.favorites)
+
+        let hosting = NSHostingView(rootView: root)
+        hosting.frame = NSRect(x: 0, y: 0, width: 1728, height: 1083)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 80, y: 80, width: 1728, height: 1083),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "无尽前沿"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isRestorable = false
+        window.contentView = hosting
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.window = window
+
+        let delay = max(DebugLaunchOptions.snapshotDelay, 2)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            self.capture(hosting, services: services, contentPath: path)
+        }
+    }
+
+    private func capture(_ hosting: NSView, services: AppServices, contentPath: String) {
+        hosting.layoutSubtreeIfNeeded()
+        if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            if let data = rep.representation(using: .png, properties: [:]) {
+                try? data.write(to: URL(fileURLWithPath: contentPath))
+                NSLog("EndlessFrontier demo captured to \(contentPath)")
+            }
+        }
+
+        guard let sidebarPath = DebugLaunchOptions.demoSidebarPath else {
+            NSApp.terminate(nil)
+            return
+        }
+
+        // The NavigationSplitView sidebar lives in an AppKit glass layer that
+        // does not draw through cacheDisplay, so render SidebarView on its own
+        // at the same height for compositing next to the detail snapshot.
+        let sidebar = SidebarView()
+            .environmentObject(services.state)
+            .environmentObject(services.settings)
+            .environmentObject(services.reports)
+            .environmentObject(services.translations)
+            .environmentObject(services.downloads)
+            .environmentObject(services.favorites)
+            .frame(width: 294, height: 1083)
+        let sideHosting = NSHostingView(rootView: sidebar)
+        sideHosting.frame = NSRect(x: 0, y: 0, width: 294, height: 1083)
+        let sideWindow = NSWindow(
+            contentRect: NSRect(x: 80, y: 80, width: 294, height: 1083),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        sideWindow.contentView = sideHosting
+        sideWindow.orderFront(nil)
+        self.sidebarWindow = sideWindow
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            sideHosting.layoutSubtreeIfNeeded()
+            if let rep = sideHosting.bitmapImageRepForCachingDisplay(in: sideHosting.bounds) {
+                sideHosting.cacheDisplay(in: sideHosting.bounds, to: rep)
+                if let data = rep.representation(using: .png, properties: [:]) {
+                    try? data.write(to: URL(fileURLWithPath: sidebarPath))
+                    NSLog("EndlessFrontier demo sidebar captured to \(sidebarPath)")
+                }
+            }
+            NSApp.terminate(nil)
+        }
     }
 }
 #endif

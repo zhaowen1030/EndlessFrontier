@@ -4,6 +4,9 @@ import AppKit
 @main
 struct EndlessFrontierApp: App {
     @StateObject private var services = AppServices()
+    #if DEBUG
+    @NSApplicationDelegateAdaptor(DebugDemoAppDelegate.self) private var debugDemoDelegate
+    #endif
 
     init() {
         // macOS 26 draws NavigationSplitView sidebars as inset floating glass

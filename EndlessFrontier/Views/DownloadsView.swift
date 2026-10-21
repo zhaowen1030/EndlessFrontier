@@ -23,6 +23,13 @@ struct DownloadsView: View {
             }
         }
         .background(PageBackdrop(tint: AppTheme.cyan))
+        .onAppear {
+            #if DEBUG
+            if DebugLaunchOptions.openReader, readerRecord == nil {
+                readerRecord = downloads.sortedDownloadedPapers.first
+            }
+            #endif
+        }
     }
 
     private var libraryView: some View {
