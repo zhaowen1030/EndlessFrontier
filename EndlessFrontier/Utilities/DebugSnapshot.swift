@@ -74,6 +74,30 @@ enum DebugLaunchOptions {
         ProcessInfo.processInfo.arguments.contains("--reader")
     }
 
+    static var translateReader: Bool {
+        ProcessInfo.processInfo.arguments.contains("--translate-reader")
+    }
+
+    static var readerTranslatedMode: Bool {
+        ProcessInfo.processInfo.arguments.contains("--reader-translated")
+    }
+
+    static var readerMode: String? {
+        value(for: "--reader-mode")
+    }
+
+    static var readerNoVocabulary: Bool {
+        ProcessInfo.processInfo.arguments.contains("--reader-no-vocab")
+    }
+
+    static var readerPage: Int? {
+        value(for: "--reader-page").flatMap(Int.init)
+    }
+
+    static var exportTranslatedPath: String? {
+        value(for: "--export-translated")
+    }
+
     static var demoCapturePath: String? {
         value(for: "--demo-capture")
     }

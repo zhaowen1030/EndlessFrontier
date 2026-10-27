@@ -4,32 +4,40 @@ import SwiftUI
 
 enum PDFReaderDisplayMode: String, CaseIterable, Identifiable {
     case original
+    case translated
     case bilingual
-    case split
+    case verticalSplit
+    case horizontalSplit
 
     var id: String { rawValue }
 
     var labelZH: String {
         switch self {
         case .original: return "原文"
+        case .translated: return "译文"
         case .bilingual: return "双语"
-        case .split: return "分屏"
+        case .verticalSplit: return "竖向分屏"
+        case .horizontalSplit: return "横向分屏"
         }
     }
 
     var labelEN: String {
         switch self {
         case .original: return "Original"
+        case .translated: return "Translated"
         case .bilingual: return "Bilingual"
-        case .split: return "Split"
+        case .verticalSplit: return "Vertical Split"
+        case .horizontalSplit: return "Horizontal Split"
         }
     }
 
     var symbol: String {
         switch self {
         case .original: return "doc.richtext"
+        case .translated: return "doc.plaintext"
         case .bilingual: return "character.book.closed"
-        case .split: return "rectangle.split.2x1"
+        case .verticalSplit: return "rectangle.split.1x2"
+        case .horizontalSplit: return "rectangle.split.2x1"
         }
     }
 }
@@ -46,6 +54,24 @@ struct PDFPageTranslationFailure: LocalizedError {
     var errorDescription: String? {
         "第 \(pageIndex + 1) 页翻译失败：\(underlying)"
     }
+}
+
+struct PDFReaderParagraph: Identifiable, Hashable {
+    let id: Int
+    let source: String
+    let chinese: String?
+    let isMath: Bool
+    let isHeading: Bool
+}
+
+struct PDFBilingualLinePair: Identifiable, Hashable {
+    let id: String
+    let blockID: Int
+    let isFirstInBlock: Bool
+    let english: String
+    let chinese: String?
+    let isMath: Bool
+    let isHeading: Bool
 }
 
 enum PDFFitMode: String, CaseIterable {
@@ -72,7 +98,9 @@ final class PDFReaderModel: ObservableObject {
     @Published private(set) var pageCount: Int = 0
     @Published private(set) var pageIndex: Int = 0
     @Published private(set) var segments: [String] = []
+    @Published private(set) var layoutBlocks: [PaperTextBlock] = []
     @Published private(set) var translation: PaperPageTranslation?
+    @Published private(set) var translatedDocument: PDFDocument?
     @Published private(set) var isLoading = true
     @Published private(set) var isTranslating = false
     @Published private(set) var isBatchTranslating = false
@@ -82,11 +110,28 @@ final class PDFReaderModel: ObservableObject {
     @Published private(set) var translationError: String?
 
     @Published var showChinese = true
-    @Published var displayMode: PDFReaderDisplayMode = .split
+    @Published var displayMode: PDFReaderDisplayMode = {
+        #if DEBUG
+        if DebugLaunchOptions.readerTranslatedMode { return .translated }
+        if let raw = DebugLaunchOptions.readerMode {
+            if raw == "split" { return .verticalSplit }
+            if let mode = PDFReaderDisplayMode(rawValue: raw) { return mode }
+        }
+        #endif
+        return .verticalSplit
+    }()
     @Published var fitMode: PDFFitMode = .automatic
-    @Published var showsVocabulary = true
+    @Published var showsVocabulary: Bool = {
+        #if DEBUG
+        return !DebugLaunchOptions.readerNoVocabulary
+        #else
+        return true
+        #endif
+    }()
 
     private var cache: PaperReadingDocument
+    private var renderedPageCache: [Int: PDFDocument] = [:]
+    private var cachedLinePairs: (page: Int, stamp: Date?, segmentCount: Int, pairs: [PDFBilingualLinePair])?
     private var translationTask: Task<Void, Never>?
     private var activityToken: NSObjectProtocol?
 
@@ -105,19 +150,38 @@ final class PDFReaderModel: ObservableObject {
         load()
     }
 
+    var readerDocument: PDFDocument? { document }
+
     var pageLabel: String {
         "\(pageIndex + 1) / \(max(pageCount, 1))"
     }
 
-    var hasText: Bool { !segments.isEmpty }
-    var vocabulary: [PaperVocabularyEntry] { translation?.vocabulary ?? [] }
-
-    var isTranslationComplete: Bool {
-        translation?.isComplete(for: segments) ?? false
+    var hasText: Bool {
+        layoutBlocks.contains { !$0.isMath } || !segments.isEmpty
     }
 
+    var vocabulary: [PaperVocabularyEntry] { translation?.vocabulary ?? [] }
+
+    var glossaryTerms: [PaperTerm] {
+        (cache.glossary ?? [:])
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .prefix(40)
+            .map { PaperTerm(source: $0.key, target: $0.value) }
+    }
+
+    var isLayoutComplete: Bool {
+        translation?.isLayoutComplete ?? false
+    }
+
+    var hasLegacyTranslation: Bool {
+        guard !isLayoutComplete, let translation, !translation.lines.isEmpty else { return false }
+        return translation.isComplete(for: segments)
+    }
+
+    var isTranslationComplete: Bool { isLayoutComplete }
+
     var canTranslate: Bool {
-        hasText && !isTranslating && !isTranslationComplete && settings.isConfigured
+        hasText && !isTranslating && !isLayoutComplete && settings.isConfigured
     }
 
     /// Paging is locked while a single page is being translated, but stays
@@ -126,7 +190,134 @@ final class PDFReaderModel: ObservableObject {
         isTranslating && !isBatchTranslating
     }
 
-    var modelLabel: String { settings.activeModel }
+    var canTranslatePaper: Bool {
+        pendingPageCount > 0 && !isTranslating && settings.isConfigured
+    }
+
+    var canExportTranslatedDocument: Bool {
+        cache.pages.values.contains { $0.translation?.isLayoutComplete == true }
+    }
+
+    var displayParagraphs: [PDFReaderParagraph] {
+        if let blocks = translation?.blocks, !blocks.isEmpty {
+            return blocks.map {
+                PDFReaderParagraph(
+                    id: $0.id,
+                    source: $0.source,
+                    chinese: $0.chinese,
+                    isMath: $0.isMath,
+                    isHeading: $0.isHeading
+                )
+            }
+        }
+        // Untranslated pages have no stored layout blocks, but the extractor
+        // already produced them for this page. Use the same block boundaries
+        // as the translated view so paragraphs, headings and spacing do not
+        // change when the page is translated.
+        if translation == nil, !layoutBlocks.isEmpty {
+            return layoutBlocks.map {
+                PDFReaderParagraph(
+                    id: $0.id,
+                    source: $0.source,
+                    chinese: nil,
+                    isMath: $0.isMath,
+                    isHeading: $0.isHeading
+                )
+            }
+        }
+        if !segments.isEmpty {
+            return segments.enumerated().map { index, source in
+                PDFReaderParagraph(
+                    id: index + 1,
+                    source: source,
+                    chinese: translation?.chinese(forSegmentIndex: index),
+                    isMath: false,
+                    isHeading: false
+                )
+            }
+        }
+        return layoutBlocks.map {
+            PDFReaderParagraph(
+                id: $0.id,
+                source: $0.source,
+                chinese: nil,
+                isMath: $0.isMath,
+                isHeading: $0.isHeading
+            )
+        }
+    }
+
+    var displayLinePairs: [PDFBilingualLinePair] {
+        let stamp = translation?.translatedAt
+        if let cached = cachedLinePairs,
+           cached.page == pageIndex,
+           cached.stamp == stamp,
+           cached.segmentCount == segments.count {
+            return cached.pairs
+        }
+        let pairs = buildDisplayLinePairs()
+        cachedLinePairs = (pageIndex, stamp, segments.count, pairs)
+        return pairs
+    }
+
+    private func buildDisplayLinePairs() -> [PDFBilingualLinePair] {
+        var result: [PDFBilingualLinePair] = []
+        for paragraph in displayParagraphs {
+            if paragraph.isMath {
+                result.append(makePair(
+                    block: paragraph,
+                    index: 0,
+                    english: paragraph.source,
+                    chinese: nil
+                ))
+                continue
+            }
+
+            guard let chinese = paragraph.chinese, !chinese.isEmpty else {
+                let lines = PDFSentenceSplitter.sentences(in: paragraph.source)
+                for (index, sentence) in lines.enumerated() {
+                    result.append(makePair(
+                        block: paragraph,
+                        index: index,
+                        english: sentence,
+                        chinese: nil
+                    ))
+                }
+                continue
+            }
+
+            let pairs = PDFSentenceAligner.pairs(
+                english: paragraph.source,
+                chinese: chinese
+            )
+            for (index, pair) in pairs.enumerated() {
+                result.append(makePair(
+                    block: paragraph,
+                    index: index,
+                    english: pair.english,
+                    chinese: pair.chinese
+                ))
+            }
+        }
+        return result
+    }
+
+    private func makePair(
+        block: PDFReaderParagraph,
+        index: Int,
+        english: String,
+        chinese: String?
+    ) -> PDFBilingualLinePair {
+        PDFBilingualLinePair(
+            id: "\(block.id)-\(index)",
+            blockID: block.id,
+            isFirstInBlock: index == 0,
+            english: english,
+            chinese: chinese,
+            isMath: block.isMath,
+            isHeading: block.isHeading
+        )
+    }
 
     func goToPage(_ index: Int) {
         guard !isNavigationLocked, pageCount > 0 else { return }
@@ -145,15 +336,23 @@ final class PDFReaderModel: ObservableObject {
         goToPage(pageIndex - 1)
     }
 
-    func translateCurrentPage() {
-        guard !isTranslating, hasText else { return }
+    func translateCurrentPage(force: Bool = false) {
+        guard !isTranslating else { return }
         guard settings.isConfigured else {
             translationError = settings.configurationHint
             return
         }
-        guard !isTranslationComplete else { return }
+        guard force || !isLayoutComplete else { return }
+        guard let page = document?.page(at: pageIndex) else { return }
+
         let targetPageIndex = pageIndex
-        let targetSegments = segments
+        let targetBlocks = PDFLayoutExtractor.blocks(from: page)
+        let targetSegments = PDFReadingText.segments(from: page)
+        guard targetBlocks.contains(where: { !$0.isMath }) || !targetSegments.isEmpty else {
+            translationError = PDFReadingError.noText.localizedDescription
+            return
+        }
+
         translationError = nil
         isTranslating = true
         activityToken = ProcessInfo.processInfo.beginActivity(
@@ -161,25 +360,41 @@ final class PDFReaderModel: ObservableObject {
             reason: "Translating a paper page"
         )
         let title = record.paper.title
+        let glossary = cache.glossary ?? [:]
 
         translationTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await PDFReadingTranslationService.translatePage(
-                    paperTitle: title,
-                    pageIndex: targetPageIndex,
-                    totalPages: self.pageCount,
-                    segments: targetSegments,
-                    settings: self.settings
-                )
+                let result: PaperPageTranslation
+                if targetBlocks.isEmpty {
+                    result = try await PDFReadingTranslationService.translatePage(
+                        paperTitle: title,
+                        pageIndex: targetPageIndex,
+                        totalPages: self.pageCount,
+                        segments: targetSegments,
+                        settings: self.settings
+                    )
+                } else {
+                    result = try await PDFLayoutTranslationService.translatePage(
+                        paperTitle: title,
+                        pageIndex: targetPageIndex,
+                        totalPages: self.pageCount,
+                        blocks: targetBlocks,
+                        glossary: glossary,
+                        settings: self.settings
+                    )
+                }
                 try Task.checkCancellation()
                 self.storeTranslation(
                     result,
                     forPage: targetPageIndex,
+                    blocks: targetBlocks,
                     segments: targetSegments
                 )
                 if self.pageIndex == targetPageIndex {
                     self.translation = result
+                    self.layoutBlocks = targetBlocks
+                    self.refreshTranslatedDocument()
                 }
                 self.endTranslation()
             } catch is CancellationError {
@@ -188,10 +403,6 @@ final class PDFReaderModel: ObservableObject {
                 self.endTranslation(error: error)
             }
         }
-    }
-
-    var canTranslatePaper: Bool {
-        pendingPageCount > 0 && !isTranslating && settings.isConfigured
     }
 
     func translateAllPages() {
@@ -222,25 +433,42 @@ final class PDFReaderModel: ObservableObject {
             for (offset, index) in pending.enumerated() {
                 if Task.isCancelled { break }
                 do {
-                    let pageSegments = self.segments(forPage: index)
-                    guard !pageSegments.isEmpty else {
+                    guard let page = self.document?.page(at: index) else { continue }
+                    let blocks = PDFLayoutExtractor.blocks(from: page)
+                    let pageSegments = PDFReadingText.segments(from: page)
+                    guard blocks.contains(where: { !$0.isMath }) || !pageSegments.isEmpty else {
+                        self.storeEmptyPage(index, segments: pageSegments)
                         self.batchProgress = PDFBatchTranslationProgress(
                             completed: offset + 1,
                             total: pending.count
                         )
                         continue
                     }
-                    let result = try await PDFReadingTranslationService.translatePage(
-                        paperTitle: title,
-                        pageIndex: index,
-                        totalPages: totalPages,
-                        segments: pageSegments,
-                        settings: self.settings
-                    )
+                    let result: PaperPageTranslation
+                    if blocks.isEmpty {
+                        result = try await PDFReadingTranslationService.translatePage(
+                            paperTitle: title,
+                            pageIndex: index,
+                            totalPages: totalPages,
+                            segments: pageSegments,
+                            settings: self.settings
+                        )
+                    } else {
+                        result = try await PDFLayoutTranslationService.translatePage(
+                            paperTitle: title,
+                            pageIndex: index,
+                            totalPages: totalPages,
+                            blocks: blocks,
+                            glossary: self.cache.glossary ?? [:],
+                            settings: self.settings
+                        )
+                    }
                     try Task.checkCancellation()
-                    self.storeTranslation(result, forPage: index, segments: pageSegments)
+                    self.storeTranslation(result, forPage: index, blocks: blocks, segments: pageSegments)
                     if self.pageIndex == index {
                         self.translation = result
+                        self.layoutBlocks = blocks
+                        self.refreshTranslatedDocument()
                     }
                     self.batchProgress = PDFBatchTranslationProgress(
                         completed: offset + 1,
@@ -267,6 +495,18 @@ final class PDFReaderModel: ObservableObject {
         endTranslation()
     }
 
+    func makeExportDocument() -> PDFDocument? {
+        var translations: [Int: [PaperTranslatedBlock]] = [:]
+        for (key, stored) in cache.pages {
+            guard let index = Int(key),
+                  let blocks = stored.translation?.blocks,
+                  stored.translation?.isLayoutComplete == true else { continue }
+            translations[index] = blocks
+        }
+        guard let document else { return nil }
+        return PDFTranslationRenderer.exportDocument(document: document, translations: translations)
+    }
+
     func untranslatedPageCount() -> Int {
         untranslatedPageIndexes().count
     }
@@ -276,46 +516,23 @@ final class PDFReaderModel: ObservableObject {
         var result: [Int] = []
         for index in 0..<pageCount {
             if let stored = cache.pages[String(index)] {
-                if stored.segments.isEmpty { continue }
-                if stored.translation?.isComplete(for: stored.segments) == true { continue }
+                if stored.translation?.isLayoutComplete == true { continue }
+                if stored.segments.isEmpty, stored.translation == nil { continue }
                 result.append(index)
             } else {
-                let pageSegments = segments(forPage: index)
-                if pageSegments.isEmpty {
-                    cacheEmptyPage(index)
-                } else {
-                    result.append(index)
-                }
+                result.append(index)
             }
         }
         return result
-    }
-
-    private func segments(forPage index: Int) -> [String] {
-        if let stored = cache.pages[String(index)], !stored.segments.isEmpty {
-            return stored.segments
-        }
-        guard let page = document?.page(at: index) else { return [] }
-        return PDFReadingText.segments(from: page)
-    }
-
-    private func cacheEmptyPage(_ index: Int) {
-        guard cache.pages[String(index)] == nil else { return }
-        cache.pages[String(index)] = StoredPaperPage(
-            pageIndex: index,
-            segments: [],
-            translation: nil
-        )
-        cache.updatedAt = Date()
-        saveCache()
     }
 
     private func refreshPendingPageCount() {
         var settled = 0
         for index in 0..<pageCount {
             guard let stored = cache.pages[String(index)] else { continue }
-            if stored.segments.isEmpty
-                || stored.translation?.isComplete(for: stored.segments) == true {
+            if stored.translation?.isLayoutComplete == true {
+                settled += 1
+            } else if stored.segments.isEmpty, stored.translation == nil {
                 settled += 1
             }
         }
@@ -348,7 +565,12 @@ final class PDFReaderModel: ObservableObject {
         document = pdf
         pageCount = count
         loadCacheDocument()
+        #if DEBUG
+        let start = DebugLaunchOptions.readerPage.map { min(max($0, 0), count - 1) }
+            ?? min(max(cache.lastPageIndex, 0), count - 1)
+        #else
         let start = min(max(cache.lastPageIndex, 0), count - 1)
+        #endif
         loadPage(start, persistLastPage: false)
         refreshPendingPageCount()
         isLoading = false
@@ -358,18 +580,19 @@ final class PDFReaderModel: ObservableObject {
         guard let document, let page = document.page(at: index) else { return }
         pageIndex = index
         translationError = nil
+        layoutBlocks = PDFLayoutExtractor.blocks(from: page)
 
         if let stored = cache.pages[String(index)] {
             segments = stored.segments
             translation = stored.translation
-            if segments.isEmpty {
-                segments = PDFReadingText.segments(from: page)
-                updateCachedPage(index, segments: segments, translation: stored.translation)
-            }
         } else {
             segments = PDFReadingText.segments(from: page)
+            translation = nil
             updateCachedPage(index, segments: segments, translation: nil)
         }
+
+        refreshTranslatedDocument()
+
         if persistLastPage {
             cache.lastPageIndex = index
             cache.updatedAt = Date()
@@ -393,19 +616,66 @@ final class PDFReaderModel: ObservableObject {
         refreshPendingPageCount()
     }
 
-    private func storeTranslation(
-        _ translation: PaperPageTranslation,
-        forPage index: Int,
-        segments: [String]
-    ) {
+    private func storeEmptyPage(_ index: Int, segments: [String]) {
         cache.pages[String(index)] = StoredPaperPage(
             pageIndex: index,
             segments: segments,
-            translation: translation
+            translation: nil
         )
         cache.updatedAt = Date()
         saveCache()
         refreshPendingPageCount()
+    }
+
+    private func storeTranslation(
+        _ translation: PaperPageTranslation,
+        forPage index: Int,
+        blocks: [PaperTextBlock],
+        segments: [String]
+    ) {
+        let storedSegments = blocks.isEmpty ? segments : blocks.map(\.source)
+        cache.pages[String(index)] = StoredPaperPage(
+            pageIndex: index,
+            segments: storedSegments,
+            translation: translation
+        )
+        mergeTerms(translation.terms)
+        cache.updatedAt = Date()
+        saveCache()
+        renderedPageCache[index] = nil
+        refreshPendingPageCount()
+    }
+
+    private func mergeTerms(_ terms: [PaperTerm]?) {
+        guard let terms, !terms.isEmpty else { return }
+        var glossary = cache.glossary ?? [:]
+        for term in terms {
+            glossary[term.source] = term.target
+        }
+        if glossary.count > 300 {
+            glossary = Dictionary(uniqueKeysWithValues: glossary.sorted { $0.key < $1.key }.prefix(300).map { ($0.key, $0.value) })
+        }
+        cache.glossary = glossary
+    }
+
+    private func refreshTranslatedDocument() {
+        guard let page = document?.page(at: pageIndex),
+              let blocks = translation?.blocks,
+              !blocks.isEmpty,
+              isLayoutComplete else {
+            translatedDocument = nil
+            return
+        }
+        if let cached = renderedPageCache[pageIndex] {
+            translatedDocument = cached
+            return
+        }
+        if let rendered = PDFTranslationRenderer.renderedDocument(original: page, blocks: blocks) {
+            renderedPageCache[pageIndex] = rendered
+            translatedDocument = rendered
+        } else {
+            translatedDocument = nil
+        }
     }
 
     private func endTranslation(error: Error? = nil) {

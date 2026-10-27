@@ -59,6 +59,7 @@
 		E0890E5AE68A21C393BCA662 /* PDFBilingualReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E5CF249958304232EDEB5A /* PDFBilingualReaderView.swift */; };
 		EC46619929DCE8201F2C25FC /* ReportGenerationCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1E7808A2FF11FC4679ED16 /* ReportGenerationCenter.swift */; };
 		EE854B22C6EE6F888C31543C /* ExploreModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04D76C8BBF097D8FA5A50D6 /* ExploreModel.swift */; };
+		C0FFEE1234567890ABCDEF01 /* PDFLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE1234567890ABCDEF02 /* PDFLayoutService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -116,6 +117,7 @@
 		EFEC05B8B2E22E79B7200A57 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		F90EA3EBC9059E49CBC60219 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		F921D1ACBBBAEB696CBCB3DF /* CategoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategoryView.swift; sourceTree = "<group>"; };
+		C0FFEE1234567890ABCDEF02 /* PDFLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFLayoutService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -179,6 +181,7 @@
 				DDEAA3F2B3D7CEBFBFC54778 /* KnowledgeTreeStore.swift */,
 				BB162AE2A6E325E38A125BB5 /* LLMClient.swift */,
 				9A915BDE817E2B006B309B03 /* PDFReadingService.swift */,
+				C0FFEE1234567890ABCDEF02 /* PDFLayoutService.swift */,
 				2D7DFF47F3B1818376DC8C39 /* ReportAnnotationStore.swift */,
 				5A1E7808A2FF11FC4679ED16 /* ReportGenerationCenter.swift */,
 				21E112AFC1F5C395651C2864 /* ReportPrompt.swift */,
@@ -356,6 +359,7 @@
 				492650F531DDBB5F187265A2 /* PDFReaderModel.swift in Sources */,
 				BFE46B12279FC52B9D29A86F /* PDFReadingModels.swift in Sources */,
 				ABF6EFF4C977DDA2247891E0 /* PDFReadingService.swift in Sources */,
+				C0FFEE1234567890ABCDEF01 /* PDFLayoutService.swift in Sources */,
 				431EE4BA3A2A5E18D1FDEE8E /* Paper.swift in Sources */,
 				ADD0AFAEDB4F8A16110AAF93 /* PaperRow.swift in Sources */,
 				11BA371220183223BC5A38EC /* ReportAnnotationStore.swift in Sources */,

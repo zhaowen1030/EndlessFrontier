@@ -31,6 +31,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>无尽前沿需要访问下载目录，以打开你已下载的论文 PDF 并在本机进行双语阅读。</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

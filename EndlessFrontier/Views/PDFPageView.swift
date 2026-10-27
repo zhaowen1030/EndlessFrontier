@@ -2,9 +2,10 @@ import SwiftUI
 import PDFKit
 
 struct PDFPageDisplayView: NSViewRepresentable {
-    let url: URL
+    let document: PDFDocument
     let pageIndex: Int
     let fitMode: PDFFitMode
+    var isLiveResizing = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -18,27 +19,28 @@ struct PDFPageDisplayView: NSViewRepresentable {
         view.displaysPageBreaks = false
         view.pageShadowsEnabled = true
         view.fitMode = fitMode
-        context.coordinator.loadDocument(url: url, into: view)
+        context.coordinator.loadDocument(document, into: view)
         context.coordinator.goToPage(pageIndex, in: view)
+        view.isLiveResizing = isLiveResizing
         return view
     }
 
     func updateNSView(_ view: FittingPDFView, context: Context) {
+        view.isLiveResizing = isLiveResizing
+        guard !isLiveResizing else { return }
         if view.fitMode != fitMode {
             view.fitMode = fitMode
         }
-        context.coordinator.loadDocument(url: url, into: view)
+        context.coordinator.loadDocument(document, into: view)
         context.coordinator.goToPage(pageIndex, in: view)
     }
 
     final class Coordinator {
-        private var loadedURL: URL?
         private var displayedPageIndex: Int?
 
-        func loadDocument(url: URL, into view: FittingPDFView) {
-            guard loadedURL != url else { return }
-            view.document = PDFDocument(url: url)
-            loadedURL = url
+        func loadDocument(_ document: PDFDocument, into view: FittingPDFView) {
+            guard view.document !== document else { return }
+            view.document = document
             displayedPageIndex = nil
             view.refreshFit()
         }
@@ -55,10 +57,49 @@ struct PDFPageDisplayView: NSViewRepresentable {
     }
 }
 
+struct PDFTranslatedPageView: NSViewRepresentable {
+    let document: PDFDocument
+    let fitMode: PDFFitMode
+    var isLiveResizing = false
+
+    func makeNSView(context: Context) -> FittingPDFView {
+        let view = FittingPDFView()
+        view.backgroundColor = .underPageBackgroundColor
+        view.displayMode = .singlePage
+        view.displayDirection = .vertical
+        view.displaysPageBreaks = false
+        view.pageShadowsEnabled = true
+        view.autoScales = true
+        view.document = document
+        if let page = document.page(at: 0) {
+            view.go(to: page)
+        }
+        view.fitMode = fitMode
+        view.isLiveResizing = isLiveResizing
+        return view
+    }
+
+    func updateNSView(_ view: FittingPDFView, context: Context) {
+        view.isLiveResizing = isLiveResizing
+        guard !isLiveResizing else { return }
+        if view.document !== document {
+            view.document = document
+            if let page = document.page(at: 0) {
+                view.go(to: page)
+            }
+            view.refreshFit()
+        }
+        if view.fitMode != fitMode {
+            view.fitMode = fitMode
+        }
+    }
+}
+
 final class FittingPDFView: PDFView {
     var fitMode: PDFFitMode = .automatic {
         didSet {
             lastFitSize = .zero
+            lastLayoutSize = .zero
             if fitMode == .automatic {
                 autoScales = true
             } else {
@@ -67,22 +108,52 @@ final class FittingPDFView: PDFView {
         }
     }
 
+    var isLiveResizing = false {
+        didSet {
+            guard oldValue != isLiveResizing else { return }
+            if isLiveResizing {
+                // Freeze the rendered scale while the user drags a divider so
+                // PDFKit does not re-render on every mouse-move tick.
+                let currentScale = scaleFactor
+                autoScales = false
+                scaleFactor = currentScale
+            } else {
+                refreshFit()
+            }
+        }
+    }
+
+    override var preservesContentDuringLiveResize: Bool { true }
+
     private var lastFitSize = CGSize.zero
+    private var lastLayoutSize = CGSize.zero
 
     override func layout() {
         super.layout()
-        if fitMode != .automatic {
-            applyCustomFit()
+        guard !isLiveResizing else { return }
+        let currentSize = bounds.size
+        guard currentSize.width > 0, currentSize.height > 0,
+              currentSize != lastLayoutSize else { return }
+        lastLayoutSize = currentSize
+        if fitMode == .automatic {
+            autoScales = true
+            layoutDocumentView()
+        } else {
+            applyCustomFit(force: true)
         }
+        needsDisplay = true
     }
 
     func refreshFit() {
         lastFitSize = .zero
+        lastLayoutSize = .zero
         if fitMode == .automatic {
             autoScales = true
+            layoutDocumentView()
         } else {
             applyCustomFit(force: true)
         }
+        needsDisplay = true
     }
 
     private func applyCustomFit(force: Bool = false) {

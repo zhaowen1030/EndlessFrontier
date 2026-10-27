@@ -45,6 +45,7 @@ targets:
         LSApplicationCategoryType: "public.app-category.education"
         LSMinimumSystemVersion: "15.0"
         ITSAppUsesNonExemptEncryption: false
+        NSDownloadsFolderUsageDescription: "无尽前沿需要访问下载目录，以打开你已下载的论文 PDF 并在本机进行双语阅读。"
         NSHighResolutionCapable: true
         NSHumanReadableCopyright: "Made for curious minds. Paper data from arXiv.org."
         NSAppTransportSecurity:

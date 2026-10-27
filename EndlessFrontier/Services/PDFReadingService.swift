@@ -1,6 +1,5 @@
 import Foundation
 import PDFKit
-import NaturalLanguage
 
 enum PDFReadingError: LocalizedError {
     case cannotOpen
@@ -80,19 +79,13 @@ enum PDFReadingText {
                 withTemplate: " "
             ).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !collapsed.isEmpty else { continue }
-            let tokenizer = NLTokenizer(unit: .sentence)
-            tokenizer.string = collapsed
-            var found = false
-            tokenizer.enumerateTokens(in: collapsed.startIndex..<collapsed.endIndex) { range, _ in
-                found = true
-                let sentence = collapsed[range].trimmingCharacters(in: .whitespacesAndNewlines)
-                if !sentence.isEmpty {
+            let sentences = PDFSentenceSplitter.sentences(in: collapsed)
+            if sentences.isEmpty {
+                segments.append(contentsOf: splitLongSentence(collapsed))
+            } else {
+                for sentence in sentences {
                     segments.append(contentsOf: splitLongSentence(sentence))
                 }
-                return true
-            }
-            if !found {
-                segments.append(contentsOf: splitLongSentence(collapsed))
             }
         }
         return segments
